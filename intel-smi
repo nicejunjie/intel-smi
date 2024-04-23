@@ -262,5 +262,5 @@ echo "+-------------------------------------------------------------------------
 
 end_time=$(date +%s.%N)
 execution_time=$(echo "$end_time - $start_time" | bc)
-printf "intel-smi runtime: %.3f seconds \n" $execution_time
+printf "intel-smi runtime: %.3fs \n" $execution_time
 
