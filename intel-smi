@@ -1,0 +1,236 @@
+#!/bin/bash 
+# This code was written by 
+#    Junjie Li (jli@tacc.utexas.edu) 
+#    Claude (an AI assistant created by Anthropic, https://claude.ai) 
+# on April 22, 2024.
+
+print_help() {
+  echo "Usage: $0 [-d DEVICE_ID]..."
+  echo "Options:"
+  echo "  -d DEVICE_ID   Specify the device ID (integer). Multiple -d options can be provided."
+  echo "                 Device IDs can also be specified as a comma-separated list (e.g., -d0,2,3)."
+  echo "                 If no -d option is provided, the script will iterate over all devices."
+  echo "  -u             Print useful commands or env var for Intel PVC GPU."
+  echo "  -h             Print this help message."
+  exit 0
+}
+
+useful_cmd() {
+  echo "Some useful commands for Intel GPU"
+  echo "  xpumcli discovery"
+  echo "  xpumcli stats -d0"
+  echo "  export ZE_AFFINITY_MASK=Device.Tile"
+  echo "  ZE_FLAT_DEVICE_HIERARCHY=[FLAT, COMPOSITE]"
+  echo "  sycl-ls"
+  echo "  hwinfo --display"
+  echo "  clinfo"
+  echo "  vainfo"
+  exit 0
+}
+
+
+# Parse command line arguments
+device_list=()
+while getopts ":d:huw" opt; do
+  case $opt in
+    d)
+      IFS=',' read -ra devices <<< "$OPTARG"
+      for device in "${devices[@]}"; do
+        if ! [[ $device =~ ^[0-9]+$ ]]; then
+          echo "Error: Device ID must be an integer."
+          exit 1
+        fi
+        device_list+=($device)
+      done
+      ;;
+    h)
+      print_help
+      ;;
+    u)
+      useful_cmd
+      ;;
+    w)
+      watch=1   
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      print_help
+      exit 1
+      ;;
+  esac
+done
+#########
+
+
+################## START #################
+start_time=$(date +%s.%N)
+
+
+
+#XPUCMD=xpumcli
+XPUCMD=$(which xpumcli 2>/dev/null || which xpu-smi 2>/dev/null)
+if [ -z "$XPUCMD" ]; then
+  echo "+-----------------------+"
+  echo "|  No Intel GPU found   |"
+  echo "+-----------------------+"
+  exit
+fi
+
+ndev_max=$($XPUCMD discovery | grep "Device Name" | wc -l)
+# Remove duplicate device IDs and device IDs >= ndev_max
+device_list=($(echo "${device_list[@]}" | tr ' ' '\n' | sort -u | awk -v max="$ndev_max" '$1 < max' | tr '\n' ' '))
+
+
+# If no -d option is provided, iterate from 0 to 3
+if [ ${#device_list[@]} -eq 0 ]; then
+  ndev=$ndev_max 
+  device_list=(`seq 0 $((ndev-1))`)
+  alldevice=1
+else 
+  ndev=${#device_list[@]} 
+fi
+
+
+#########
+
+# Get device info
+gpu_firmwares=()
+
+get_devinfo() {
+ local id=$1
+ local devid=$2
+ local outstat="${outstat_all[$id]}"
+ local outdis="${outdis_all[$id]}"
+
+  #outstat=`$XPUCMD stats -d$devid|sed 's/|//g'|sed 's/;//g'`
+
+  read gpu_dev_util1 gpu_dev_util2 \
+       <<< "$(echo "$outstat" | grep "GPU Utilization" | awk '{printf "%s%% %s%%", $6, $9}')" 
+
+  read gpu_core_t1 gpu_core_t2 \
+       <<< "$(echo "$outstat" | grep -A1 "GPU Core Temperature" | awk '{printf "%sC ", $NF}')" 
+
+  read gpu_dev_p1 gpu_dev_p2 \
+       <<< "$(echo "$outstat" | grep -A1 "GPU Power (W)" | awk '{printf "%sW ", $NF}')"  
+
+  read gpu_mem_use1 gpu_mem_use2 \
+       <<< "$(echo "$outstat" | grep -A1 "GPU Memory Used" | awk '{printf "%sMiB ", $NF}')"  
+
+  read gpu_mem_util1 gpu_mem_util2 \
+       <<< "$(echo "$outstat" | grep -A1 "GPU Memory Util" | awk '{printf "%s%% ", $NF}')"   
+
+  #outdis=`$XPUCMD discovery -d$devid|sed 's/|//g'`
+
+ # read gpu_firmware \
+ #      <<< "$(echo "$outdis" | grep "Firmware Version")"
+  gpu_firmware="$(echo "$outdis" | grep "Firmware Version")"
+  gpu_firmwares+=("$gpu_firmware")
+
+
+  read gpu_mem_total \
+       <<< "$(echo "$outdis" | grep "Max Mem Alloc Size" | awk '{printf "%.f ", $(NF-1)}')"
+
+  read gpu_mem_tot1 gpu_mem_tot2 \
+       <<< "$(echo ${gpu_mem_total}|awk '{printf "%dMiB %dMiB", $1/2, $1/2}')" 
+
+  read gpu_name \
+       <<< "$(echo "$outdis" | grep "Device Name" | awk -F: '{print $NF}'|sed 's/Intel(R)//g')"
+
+  read gpu_pci_bdf \
+       <<< "$(echo "$outdis" | grep "PCI BDF Address" | awk '{print $NF}')"
+
+  read gpu_ecc \
+       <<< "$(echo "$outdis" | grep "ECC State" | awk -F: '{print $NF}'|sed 's/enabled/on/g'|sed 's/disable/off/g')"
+         
+
+#device level info : device id, GPU name, PCI-Addr, ECC   
+
+printf "| %1s  %30s     | %22s |   %4s   |\n" "$devid"  "$gpu_name"  "$gpu_pci_bdf"   "$gpu_ecc" 
+printf "| %4s    %7s  %14s       | %22s |   %4s   |\n" \
+       "$devid.0"    "${gpu_core_t1}"  "${gpu_dev_p1}/300W" \
+       "${gpu_mem_use1}/${gpu_mem_tot1}(${gpu_mem_util1})" \
+       "${gpu_dev_util1}"
+printf "| %4s    %7s  %14s       | %22s |   %4s   |\n" \
+       "$devid.1"    "${gpu_core_t2}"  "${gpu_dev_p2}/300W" \
+       "${gpu_mem_use2}/${gpu_mem_tot2}(${gpu_mem_util2})" \
+       "${gpu_dev_util2}"
+
+}
+
+
+
+get_header(){
+echo "+---------------------------------------+------------------------+----------+"
+echo "| Device            GPU-Name            |      PCI-BDF-Addr      |   ECC    |"
+echo "|   Tile      Temp     Pwr:Usage/Cap    |       Mem-Usage        | GPU-Util |"
+echo "|=======================================+========================+==========|"
+}
+
+get_driver(){
+   echo "+---------------------------------------------------------------------------+"
+   echo "${outdis_all[@]}" |egrep "Driver Version|Firmware Version"|awk '{gsub(/^ +| +$/,"")}1'| awk '!a[$0]++ { printf("|  %-73s|\n", $0) }'
+}
+
+
+
+
+##########REAL DEAL NOW##################
+
+declare -a outstat_all
+declare -a outdis_all
+for devid in "${device_list[@]}"; do
+    tmp=`$XPUCMD stats -d$devid|sed 's/|//g'|sed 's/;//g'`
+    outstat_all+=("$tmp")
+    tmp=`$XPUCMD discovery -d$devid|sed 's/|//g'|sed 's/;//g'`
+    outdis_all+=("$tmp")
+done
+
+# output now! 
+
+date
+get_driver
+get_header
+for ((i=0; i<ndev; i++)); do
+     get_devinfo $i ${device_list[$i]}
+    if ((i < ndev - 1)); then
+       echo "|---------------------------------------+------------------------+----------|"
+    else 
+       echo "+---------------------------------------+------------------------+----------+"
+ fi
+done
+
+
+echo "+---------------------------------------------------------------------------+"
+if [ $ndev -lt $ndev_max ] && [ -z "$alldevice" ] ; then
+  echo "looping over devices" $ndev $ndev_max
+#  this is extra 0.06s of overhead
+  output=""
+  for devid in "${device_list[@]}"; do
+    output+=$($XPUCMD ps -d"$devid"|sed '1d')
+    output+=$'\n'  # Add a newline character after each output
+  done
+else 
+  output=$($XPUCMD ps|sed '1d')
+fi
+XPUMDYES=""
+xpumd_count=$(echo "$output" | grep -c "xpumd")
+if [ $xpumd_count -gt 0 ]; then
+    XPUMDYES="except xpumd(x$xpumd_count)"
+fi
+
+filtered_output=$(echo "$output" | grep -v "xpumd")
+echo "|PID       Command           DeviceID        SHR              MEM           |"
+echo "|===========================================================================|"
+if [ -z "$filtered_output" ]; then
+    printf "|       %30s %-20s                 |\n"   "No running process" "$XPUMDYES"  
+else
+    echo "$filtered_output"  | sed 's/^/|/' | sed 's/$/|/'
+fi
+echo "+---------------------------------------------------------------------------+"
+
+
+
+end_time=$(date +%s.%N)
+execution_time=$(echo "$end_time - $start_time" | bc)
+printf "intel-smi runtime: %.3f seconds \n" $execution_time
+
