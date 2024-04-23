@@ -2,7 +2,10 @@
 # This code was written by 
 #    Junjie Li (jli@tacc.utexas.edu) 
 #    Claude (an AI assistant created by Anthropic, https://claude.ai) 
-# on April 22, 2024.
+# on April 23, 2024.
+
+version="v0.4.23"
+#echo "intel-smi version $version"
 
 print_help() {
   echo "Usage: $0 [-d DEVICE_ID]..."
@@ -12,6 +15,8 @@ print_help() {
   echo "                 If no -d option is provided, the script will iterate over all devices."
   echo "  -u             Print useful commands or env var for Intel PVC GPU."
   echo "  -h             Print this help message."
+  echo "  -t             Use no temporary files."
+  echo "  -v             Show version."
   exit 0
 }
 
@@ -31,7 +36,7 @@ useful_cmd() {
 
 # Parse command line arguments
 device_list=()
-while getopts ":d:huw" opt; do
+while getopts ":d:huwt" opt; do
   case $opt in
     d)
       IFS=',' read -ra devices <<< "$OPTARG"
@@ -49,8 +54,11 @@ while getopts ":d:huw" opt; do
     u)
       useful_cmd
       ;;
+    t)
+      no_tmp=1
+      ;;
     w)
-      watch=1   
+      watch=1    #NYI
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -128,7 +136,7 @@ get_devinfo() {
 
 
   read gpu_mem_total \
-       <<< "$(echo "$outdis" | grep "Max Mem Alloc Size" | awk '{printf "%.f ", $(NF-1)}')"
+       <<< "$(echo "$outdis" | grep "Memory Physical Size" | awk '{printf "%.f ", $(NF-1)}')"
 
   read gpu_mem_tot1 gpu_mem_tot2 \
        <<< "$(echo ${gpu_mem_total}|awk '{printf "%dMiB %dMiB", $1/2, $1/2}')" 
@@ -145,12 +153,12 @@ get_devinfo() {
 
 #device level info : device id, GPU name, PCI-Addr, ECC   
 
-printf "| %1s  %30s     | %22s |   %4s   |\n" "$devid"  "$gpu_name"  "$gpu_pci_bdf"   "$gpu_ecc" 
-printf "| %4s    %7s  %14s       | %22s |   %4s   |\n" \
+printf "| %-2s  %30s  | %24s |   %4s   |\n" "$devid"  "$gpu_name"  "$gpu_pci_bdf"   "$gpu_ecc" 
+printf "| %4s    %7s  %14s     | %24s |   %4s   |\n" \
        "$devid.0"    "${gpu_core_t1}"  "${gpu_dev_p1}/300W" \
        "${gpu_mem_use1}/${gpu_mem_tot1}(${gpu_mem_util1})" \
        "${gpu_dev_util1}"
-printf "| %4s    %7s  %14s       | %22s |   %4s   |\n" \
+printf "| %4s    %7s  %14s     | %24s |   %4s   |\n" \
        "$devid.1"    "${gpu_core_t2}"  "${gpu_dev_p2}/300W" \
        "${gpu_mem_use2}/${gpu_mem_tot2}(${gpu_mem_util2})" \
        "${gpu_dev_util2}"
@@ -160,15 +168,15 @@ printf "| %4s    %7s  %14s       | %22s |   %4s   |\n" \
 
 
 get_header(){
-echo "+---------------------------------------+------------------------+----------+"
-echo "| Device            GPU-Name            |      PCI-BDF-Addr      |   ECC    |"
-echo "|   Tile      Temp     Pwr:Usage/Cap    |       Mem-Usage        | GPU-Util |"
-echo "|=======================================+========================+==========|"
+echo "+-------------------------------------+--------------------------+----------+"
+echo "| Device            GPU-Name          |       PCI-BDF-Addr       |   ECC    |"
+echo "|   Tile      Temp     Pwr:Usage/Cap  |        Mem-Usage         | GPU-Util |"
+echo "|=====================================+==========================+==========|"
 }
 
 get_driver(){
-   echo "+---------------------------------------------------------------------------+"
-   echo "${outdis_all[@]}" |egrep "Driver Version|Firmware Version"|awk '{gsub(/^ +| +$/,"")}1'| awk '!a[$0]++ { printf("|  %-73s|\n", $0) }'
+   echo "+-------------------------------------------------------------------$version-+"
+   echo "${outdis_all[@]}" |egrep "Driver Version|Kernel Version|Firmware Version"|awk '{gsub(/^ +| +$/,"")}1'| awk '!a[$0]++ { printf("|  %-73s|\n", $0) }'
 }
 
 
@@ -178,12 +186,30 @@ get_driver(){
 
 declare -a outstat_all
 declare -a outdis_all
-for devid in "${device_list[@]}"; do
-    tmp=`$XPUCMD stats -d$devid|sed 's/|//g'|sed 's/;//g'`
-    outstat_all+=("$tmp")
-    tmp=`$XPUCMD discovery -d$devid|sed 's/|//g'|sed 's/;//g'`
-    outdis_all+=("$tmp")
-done
+if [[ -v $no_tmp ]]; then 
+   for devid in "${device_list[@]}"; do
+      tmp=`$XPUCMD stats -d$devid|sed 's/|//g'|sed 's/;//g'`
+      outstat_all+=("$tmp")
+      tmp=`$XPUCMD discovery -d$devid|sed 's/|//g'|sed 's/;//g'`
+     outdis_all+=("$tmp")
+  done
+else 
+  for devid in "${device_list[@]}"; do
+    outstat_file="/tmp/outstat.$$.$devid"
+    outdis_file="/tmp/outdis.$$.$devid"
+    ($XPUCMD stats -d$devid | sed 's/|//g' | sed 's/;//g' > "$outstat_file") &
+    ($XPUCMD discovery -d$devid | sed 's/|//g' | sed 's/;//g' > "$outdis_file") &
+  done
+  wait 
+  for devid in "${device_list[@]}"; do
+     outstat_file="/tmp/outstat.$$.$devid"
+     outdis_file="/tmp/outdis.$$.$devid"
+     outstat_all+=("$(cat "$outstat_file")")
+     outdis_all+=("$(cat "$outdis_file")")
+     rm "$outstat_file" "$outdis_file"  # Clean up temporary files
+  done
+fi
+
 
 # output now! 
 
@@ -193,9 +219,9 @@ get_header
 for ((i=0; i<ndev; i++)); do
      get_devinfo $i ${device_list[$i]}
     if ((i < ndev - 1)); then
-       echo "|---------------------------------------+------------------------+----------|"
+       echo "|-------------------------------------+--------------------------+----------|"
     else 
-       echo "+---------------------------------------+------------------------+----------+"
+       echo "+-------------------------------------+--------------------------+----------+"
  fi
 done
 
