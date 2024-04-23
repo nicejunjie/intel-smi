@@ -5,7 +5,6 @@
 # on April 23, 2024.
 
 version="v0.4.23"
-#echo "intel-smi version $version"
 
 print_help() {
   echo "Usage: $0 [-d DEVICE_ID]..."
@@ -36,7 +35,7 @@ useful_cmd() {
 
 # Parse command line arguments
 device_list=()
-while getopts ":d:huwt" opt; do
+while getopts ":d:huwtv" opt; do
   case $opt in
     d)
       IFS=',' read -ra devices <<< "$OPTARG"
@@ -57,6 +56,11 @@ while getopts ":d:huwt" opt; do
     t)
       no_tmp=1
       ;;
+    v)
+      cho "intel-smi script version $version"
+      exit 0
+      ;;
+
     w)
       watch=1    #NYI
       ;;
