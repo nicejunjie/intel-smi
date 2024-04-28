@@ -7,9 +7,6 @@ It's even so hard to browse basic info like how much memory is used or which til
 
 So this script extracts key info that most commonly matters to users, and form an `nvidia-smi` style output. 
 
-Intel, thanks for making those crappy tools.  
-
-
 **Usage:** <br>
   `intel-smi` will prints info of all devices. <br>
   `intel-smi -d DEVICE_ID` will show info of a particular device, multiple devices can be specified as a comma-separated list (e.g., -d0,2,3). <br>
