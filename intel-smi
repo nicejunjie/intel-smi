@@ -6,6 +6,9 @@
 
 version="v0.4.23"
 
+# https://www.intel.com/content/www/us/en/developer/articles/technical/intel-data-center-gpu-max-series-overview.html
+# https://intel.github.io/xpumanager/index.html
+
 print_help() {
   echo "Usage: $0 [-d DEVICE_ID]..."
   echo "Options:"
@@ -232,7 +235,6 @@ done
 
 echo "+---------------------------------------------------------------------------+"
 if [ $ndev -lt $ndev_max ] && [ -z "$alldevice" ] ; then
-  echo "looping over devices" $ndev $ndev_max
 #  this is extra 0.06s of overhead
   output=""
   for devid in "${device_list[@]}"; do
