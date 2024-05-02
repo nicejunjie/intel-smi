@@ -4,7 +4,7 @@
 #    Claude (an AI assistant created by Anthropic, https://claude.ai) 
 # on April 23, 2024.
 
-version="v0.4.23"
+version="v0.5.02"
 
 # https://www.intel.com/content/www/us/en/developer/articles/technical/intel-data-center-gpu-max-series-overview.html
 # https://intel.github.io/xpumanager/index.html
@@ -162,11 +162,11 @@ get_devinfo() {
 
 printf "| %-2s  %30s  | %24s |   %4s   |\n" "$devid"  "$gpu_name"  "$gpu_pci_bdf"   "$gpu_ecc" 
 printf "| %4s    %7s  %14s     | %24s |   %4s   |\n" \
-       "$devid.0"    "${gpu_core_t1}"  "${gpu_dev_p1}/300W" \
+       "$devid.0"    "${gpu_core_t1}"  "${gpu_dev_p1}" \
        "${gpu_mem_use1}/${gpu_mem_tot1}(${gpu_mem_util1})" \
        "${gpu_dev_util1}"
 printf "| %4s    %7s  %14s     | %24s |   %4s   |\n" \
-       "$devid.1"    "${gpu_core_t2}"  "${gpu_dev_p2}/300W" \
+       "$devid.1"    "${gpu_core_t2}"  "${gpu_dev_p2}" \
        "${gpu_mem_use2}/${gpu_mem_tot2}(${gpu_mem_util2})" \
        "${gpu_dev_util2}"
 
@@ -177,7 +177,7 @@ printf "| %4s    %7s  %14s     | %24s |   %4s   |\n" \
 get_header(){
 echo "+-------------------------------------+--------------------------+----------+"
 echo "| Device            GPU-Name          |       PCI-BDF-Addr       |   ECC    |"
-echo "|   Tile      Temp     Pwr:Usage/Cap  |        Mem-Usage         | GPU-Util |"
+echo "|   Tile      Temp     Pwr:Usage      |        Mem-Usage         | GPU-Util |"
 echo "|=====================================+==========================+==========|"
 }
 
