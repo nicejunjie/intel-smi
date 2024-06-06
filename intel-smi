@@ -4,7 +4,7 @@
 #    Claude (an AI assistant created by Anthropic, https://claude.ai) 
 # on April 23, 2024.
 
-version="v0.5.02"
+version="v0.6.06"
 
 # https://www.intel.com/content/www/us/en/developer/articles/technical/intel-data-center-gpu-max-series-overview.html
 # https://intel.github.io/xpumanager/index.html
@@ -38,7 +38,8 @@ useful_cmd() {
 
 # Parse command line arguments
 device_list=()
-while getopts ":d:huwtv" opt; do
+brief=0
+while getopts ":d:huwtvb" opt; do
   case $opt in
     d)
       IFS=',' read -ra devices <<< "$OPTARG"
@@ -63,10 +64,13 @@ while getopts ":d:huwtv" opt; do
       cho "intel-smi script version $version"
       exit 0
       ;;
-
     w)
       watch=1    #NYI
       ;;
+    b)
+      brief=1    #NYI
+      ;;
+
     \?)
       echo "Invalid option: -$OPTARG" >&2
       print_help
@@ -233,32 +237,34 @@ for ((i=0; i<ndev; i++)); do
 done
 
 
-echo "+---------------------------------------------------------------------------+"
-if [ $ndev -lt $ndev_max ] && [ -z "$alldevice" ] ; then
-#  this is extra 0.06s of overhead
-  output=""
-  for devid in "${device_list[@]}"; do
-    output+=$($XPUCMD ps -d"$devid"|sed '1d')
-    output+=$'\n'  # Add a newline character after each output
-  done
-else 
-  output=$($XPUCMD ps|sed '1d')
-fi
-XPUMDYES=""
-xpumd_count=$(echo "$output" | grep -c "xpumd")
-if [ $xpumd_count -gt 0 ]; then
-    XPUMDYES="except xpumd(x$xpumd_count)"
-fi
+if [ "$brief" -ne 1 ]; then
+  echo "+---------------------------------------------------------------------------+"
+  if [ $ndev -lt $ndev_max ] && [ -z "$alldevice" ] ; then
+  #  this is extra 0.06s of overhead
+    output=""
+    for devid in "${device_list[@]}"; do
+      output+=$($XPUCMD ps -d"$devid"|sed '1d')
+      output+=$'\n'  # Add a newline character after each output
+    done
+  else 
+    output=$($XPUCMD ps|sed '1d')
+  fi
+  XPUMDYES=""
+  xpumd_count=$(echo "$output" | grep -c "xpumd")
+  if [ $xpumd_count -gt 0 ]; then
+      XPUMDYES="except xpumd(x$xpumd_count)"
+  fi
 
-filtered_output=$(echo "$output" | grep -v "xpumd")
-echo "|PID       Command           DeviceID        SHR              MEM           |"
-echo "|===========================================================================|"
-if [ -z "$filtered_output" ]; then
-    printf "|       %30s %-20s                 |\n"   "No running process" "$XPUMDYES"  
-else
-    echo "$filtered_output"  | sed 's/^/|/' | sed 's/$/|/'
+  filtered_output=$(echo "$output" | grep -v "xpumd")
+  echo "|PID       Command           DeviceID        SHR              MEM           |"
+  echo "|===========================================================================|"
+  if [ -z "$filtered_output" ]; then
+      printf "|       %30s %-20s                 |\n"   "No running process" "$XPUMDYES"  
+  else
+      echo "$filtered_output"  | sed 's/^/|/' | sed 's/$/|/'
+  fi
 fi
-echo "+---------------------------------------------------------------------------+"
+  echo "+---------------------------------------------------------------------------+"
 
 
 
