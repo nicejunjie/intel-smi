@@ -4,7 +4,7 @@
 #    Claude (an AI assistant created by Anthropic, https://claude.ai) 
 # on April 23, 2024.
 
-version="v0.6.06"
+version="v0.7.08"
 
 # https://www.intel.com/content/www/us/en/developer/articles/technical/intel-data-center-gpu-max-series-overview.html
 # https://intel.github.io/xpumanager/index.html
@@ -32,6 +32,7 @@ useful_cmd() {
   echo "  hwinfo --display"
   echo "  clinfo"
   echo "  vainfo"
+  echo "  xpumcli dump -d 0 -m 0,1,2,3,4,5,35"
   exit 0
 }
 
